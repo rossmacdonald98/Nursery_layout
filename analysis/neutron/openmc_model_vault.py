@@ -128,7 +128,7 @@ def nursery_model():
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(1e4)
+    settings.particles = int(1e5)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
@@ -1551,6 +1551,7 @@ if __name__ == "__main__":
     stdev_3 = tbr_tally_3["std. dev."].iloc[0]
 
     rel_stdev_3 = stdev_3 / mean_3
+
 
     ## print TBR results
     print(f"BABY 1 TBR: {mean_1:.6e}\n")
