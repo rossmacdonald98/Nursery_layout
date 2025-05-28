@@ -1528,43 +1528,43 @@ if __name__ == "__main__":
         print(f"  BABY {i} at position {pos} cm with breeder material: {breeder}")
 
 
-    ## BABY 1 results
+    ## get BABY 1 results
     tbr_tally_1 = sp.get_tally(name="TBR_1").get_pandas_dataframe()
 
     mean_1 = tbr_tally_1["mean"].iloc[0]
     stdev_1 = tbr_tally_1["std. dev."].iloc[0]
 
-    print(f"BABY 1 TBR: {mean_1:.6e}\n")
-    print(f"BABY 1 TBR std. dev: {stdev_1:.6e}\n")
-
     rel_stdev_1 = stdev_1 / mean_1
 
-    print(f"BABY 1 Relative standard deviation: {rel_stdev_1:.6e}\n")
-
-    ## BABY 2 results
+    ## get BABY 2 results
     tbr_tally_2 = sp.get_tally(name="TBR_2").get_pandas_dataframe()
 
     mean_2 = tbr_tally_2["mean"].iloc[0]
     stdev_2 = tbr_tally_2["std. dev."].iloc[0]
 
-    print(f"BABY 2 TBR: {mean_2:.6e}\n")
-    print(f"BABY 2 TBR std. dev: {stdev_2:.6e}\n")
-
     rel_stdev_2 = stdev_2 / mean_2
 
-    print(f"BABY 2 Relative standard deviation: {rel_stdev_2:.6e}\n")
-
-    ## BABY 3 results
+    ## get BABY 3 results
     tbr_tally_3 = sp.get_tally(name="TBR_3").get_pandas_dataframe()
 
     mean_3 = tbr_tally_3["mean"].iloc[0]
     stdev_3 = tbr_tally_3["std. dev."].iloc[0]
 
-    print(f"BABY 3 TBR: {mean_3:.6e}\n")
-    print(f"BABY 3 TBR std. dev: {stdev_3:.6e}\n")
-
     rel_stdev_3 = stdev_3 / mean_3
 
+    ## print TBR results
+    print(f"BABY 1 TBR: {mean_1:.6e}\n")
+    print(f"BABY 2 TBR: {mean_2:.6e}\n")
+    print(f"BABY 3 TBR: {mean_3:.6e}\n")
+
+    ## print standard deviation results
+    print(f"BABY 1 TBR std. dev: {stdev_1:.6e}\n")
+    print(f"BABY 1 Relative standard deviation: {rel_stdev_1:.6e}\n")
+
+    print(f"BABY 2 TBR std. dev: {stdev_2:.6e}\n")
+    print(f"BABY 2 Relative standard deviation: {rel_stdev_2:.6e}\n")
+
+    print(f"BABY 3 TBR std. dev: {stdev_3:.6e}\n")
     print(f"BABY 3 Relative standard deviation: {rel_stdev_3:.6e}\n")
 
     print("Relative standard deviation below 1e-02 (1%) indicates good convergence.")
