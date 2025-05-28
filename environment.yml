@@ -1,0 +1,23 @@
+name: Nursery_layout
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - openmc-plotter
+  - numpy # add version tag
+  - scipy # add version tag
+  - matplotlib # add version tag
+  - sympy
+  - pandas
+  - pint-pandas
+  - nbconvert
+  - ipykernel
+  - vtk
+  - pint
+  - pip
+  - pip:
+      - git+https://github.com/libra-project/libra-toolbox@v0.6.1
+      - https://github.com/shimwell/wheels/raw/refs/heads/main/openmc/openmc-0.15.3-cp312-cp312-manylinux_2_28_x86_64.whl
+      - openmc_data_downloader
+      - matplotlib-label-lines
+      - h-transport-materials
