@@ -114,8 +114,8 @@ def nursery_model():
     ]
 
     ########## Build cells defining geometry of BABY experiment(s), source and exclusion sphere ##########
-    sphere = sphere_geometry(baby_positions)
-    
+    # sphere = sphere_geometry(baby_positions)
+
     cells, breeder_cells = nursery_geometry(baby_positions, breeders)
 
     ############################################################################
@@ -128,12 +128,14 @@ def nursery_model():
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(1e5)
+    settings.particles = int(1e4)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
     ############################################################################
-    overall_exclusion_region = -sphere
+    # overall_exclusion_region = -sphere
+
+    overall_exclusion_region = -bounding_geometry(baby_positions, 50)
 
     ############################################################################
     # Specify Tallies
@@ -181,34 +183,26 @@ def nursery_model():
     return model
 
 
-def sphere_geometry(baby_positions):
-    """Returns the geometry for the model exclusion sphere. sphere is sized so that all BABY positions are included + 20%
+def bounding_geometry(positions, margin):
+    """
+    Returns a cuboid region that bounds all positions, with optional margin.
 
     Args:
-        baby_positions: list of tuples defining all BABY positions in the vault (cm)
+        positions (list of tuple): List of (x, y, z) positions.
+        margin (float): Extra margin to add to each side (in cm).
 
     Returns:
-        exclusion sphere for the OpenMC model.
+        cuboid surface bounding all supplied positions with margin.
     """
+    positions = np.array(positions)
+    x_min, y_min, z_min = np.min(positions, axis=0) - margin
+    x_max, y_max, z_max = np.max(positions, axis=0) + margin
 
-    # Calculate midpoint position (center of bounding box)
-    min_xyz = np.min(baby_positions, axis=0)
-    max_xyz = np.max(baby_positions, axis=0)
-    midpoint = (min_xyz + max_xyz) / 2
-    x_c, y_c, z_c = midpoint
+    bouding_cuboid = openmc.model.RectangularParallelepiped(
+        x_min, x_max, y_min, y_max, z_min, z_max
+    )
 
-    # Calculate distances from midpoint to each position
-    distances = [np.linalg.norm(np.array([x_c, y_c, z_c]) - np.array(pos)) for pos in baby_positions]
-
-    # Find the maximum distance
-    max_distance = max(distances)
-    # Add 20% to the maximum distance for the sphere radius
-    sphere_radius = max_distance * 1.2
-
-    ########## Sphere ##########
-    sphere = openmc.Sphere(x0=x_c, y0=y_c, z0=z_c, r=sphere_radius)  # before r=50.00
-
-    return sphere
+    return bouding_cuboid
 
 
 def nursery_geometry(baby_positions, breeders):
@@ -222,7 +216,6 @@ def nursery_geometry(baby_positions, breeders):
         cells: cells defining the BABY geometries in their respective positions in the vault.
         breeder_cells: list of breeder cells for each BABY experiment
     """
-
 
     ########## BABY 1 ##########
     x_c, y_c, z_c = baby_positions[0]
@@ -328,14 +321,14 @@ def nursery_geometry(baby_positions, breeders):
     z_cyl_6_1 = openmc.ZCylinder(x0=x_c, y0=y_c, r=ov_external_radius)
 
     heater_z = (
-    epoxy_thickness
-    + alumina_compressed_thickness
-    + ov_base_thickness
-    + alumina_thickness
-    + he_thickness
-    + iv_base_thickness
-    + heater_gap
-    + z_c
+        epoxy_thickness
+        + alumina_compressed_thickness
+        + ov_base_thickness
+        + alumina_thickness
+        + he_thickness
+        + iv_base_thickness
+        + heater_gap
+        + z_c
     )
 
     right_cyl_1 = openmc.model.RightCircularCylinder(
@@ -346,21 +339,33 @@ def nursery_geometry(baby_positions, breeders):
         # If BABY 1 is the one with the neutron source, add the source geometry
         source_x = x_c - 13.50
         source_y = y_c
-        source_z = z_c - source_z_offset 
+        source_z = z_c - source_z_offset
 
         ext_cyl_source = openmc.model.RightCircularCylinder(
-        (source_x, source_y, source_z), source_h, source_external_r, axis="x"
+            (source_x, source_y, source_z), source_h, source_external_r, axis="x"
         )
         source_region = openmc.model.RightCircularCylinder(
-        (source_x + 0.25, source_y, source_z), source_h - 0.50, source_internal_r, axis="x"
+            (source_x + 0.25, source_y, source_z),
+            source_h - 0.50,
+            source_internal_r,
+            axis="x",
         )
 
         source_wall_region = -ext_cyl_source & +source_region
         source_region = -source_region
 
+    ########## Cuboid for trimming geometry ##########
 
-    ########## Sphere for trimming geometry ##########
-    sphere_1 = openmc.Sphere(x0=x_c, y0=y_c, z0=z_c, r=50.00)  
+    x_min = x_c - 40
+    x_max = x_c + 40
+    y_min = y_c - 40
+    y_max = y_c + 40
+    z_min = z_c - 40
+    z_max = z_c + 40
+
+    cuboid_1 = openmc.model.RectangularParallelepiped(
+        x_min, x_max, y_min, y_max, z_min, z_max
+    )
 
     ########## Lead bricks positioned under the source ##########
     positions = [
@@ -383,29 +388,26 @@ def nursery_geometry(baby_positions, breeders):
         lead_blocks_1.append(lead_block_region_1)
 
     ########## Regions for BABY 1 ##########
-    epoxy_region_1 = +z_plane_1_1 & -z_plane_2_1 & -sphere_1
-    alumina_compressed_region_1 = +z_plane_2_1 & -z_plane_3_1 & -sphere_1
+    epoxy_region_1 = +z_plane_1_1 & -z_plane_2_1 & -cuboid_1
+    alumina_compressed_region_1 = +z_plane_2_1 & -z_plane_3_1 & -cuboid_1
     bottom_vessel_1 = +z_plane_3_1 & -z_plane_4_1 & -z_cyl_6_1
     top_vessel_1 = +z_plane_12_1 & -z_plane_13_1 & -z_cyl_6_1 & +right_cyl_1
     cylinder_vessel_1 = +z_plane_4_1 & -z_plane_12_1 & +z_cyl_5_1 & -z_cyl_6_1
     vessel_region_1 = bottom_vessel_1 | cylinder_vessel_1 | top_vessel_1
     alumina_region_1 = +z_plane_4_1 & -z_plane_5_1 & -z_cyl_5_1
     bottom_cap_1 = +z_plane_6_1 & -z_plane_7_1 & -z_cyl_2_1 & +right_cyl_1
-    cylinder_cap_1 = +z_plane_7_1 & -z_plane_9_1 & +z_cyl_1_1 & -z_cyl_2_1 & +right_cyl_1
+    cylinder_cap_1 = (
+        +z_plane_7_1 & -z_plane_9_1 & +z_cyl_1_1 & -z_cyl_2_1 & +right_cyl_1
+    )
     top_cap_1 = +z_plane_9_1 & -z_plane_10_1 & -z_cyl_2_1 & +right_cyl_1
     cap_region_1 = bottom_cap_1 | cylinder_cap_1 | top_cap_1
 
-    breeder_region_1 = (
-        +z_plane_7_1
-        & -z_plane_8_1
-        & -z_cyl_1_1
-        & +right_cyl_1
-    )
+    breeder_region_1 = +z_plane_7_1 & -z_plane_8_1 & -z_cyl_1_1 & +right_cyl_1
 
     gap_region_1 = +z_plane_8_1 & -z_plane_9_1 & -z_cyl_1_1 & +right_cyl_1
     furnace_region_1 = +z_plane_5_1 & -z_plane_11_1 & +z_cyl_3_1 & -z_cyl_4_1
     heater_region_1 = -right_cyl_1
-    table_under_source_region_1 = +z_plane_15_1 & -z_plane_14_1 & -sphere_1
+    table_under_source_region_1 = +z_plane_15_1 & -z_plane_14_1 & -cuboid_1
     lead_block_1_region_1 = -lead_blocks_1[0]
     lead_block_2_region_1 = -lead_blocks_1[1]
     lead_block_3_region_1 = -lead_blocks_1[2]
@@ -431,9 +433,9 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_1
             & ~lead_block_3_region_1
             & ~lead_block_4_region_1
-            )
-        sphere_region_1 = (
-            -sphere_1
+        )
+        cuboid_region_1 = (
+            -cuboid_1
             & ~source_wall_region
             & ~source_region
             & ~epoxy_region_1
@@ -451,7 +453,7 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_1
             & ~lead_block_3_region_1
             & ~lead_block_4_region_1
-            )
+        )
     else:
         he_region_1 = (
             +z_plane_5_1
@@ -471,9 +473,9 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_1
             & ~lead_block_3_region_1
             & ~lead_block_4_region_1
-            )
-        sphere_region_1 = (
-            -sphere_1
+        )
+        cuboid_region_1 = (
+            -cuboid_1
             & ~epoxy_region_1
             & ~alumina_compressed_region_1
             & ~alumina_region_1
@@ -489,7 +491,7 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_1
             & ~lead_block_3_region_1
             & ~lead_block_4_region_1
-            )
+        )
 
     ########## Cells for BABY 1 ##########
     if source_position == 1:
@@ -498,7 +500,7 @@ def nursery_geometry(baby_positions, breeders):
 
         source_region = openmc.Cell(region=source_region)
         source_region.fill = None
-    
+
     epoxy_cell_1 = openmc.Cell(region=epoxy_region_1)
     epoxy_cell_1.fill = epoxy
 
@@ -527,15 +529,15 @@ def nursery_geometry(baby_positions, breeders):
 
     furnace_cell_1 = openmc.Cell(region=furnace_region_1)
     furnace_cell_1.fill = furnace
-    
+
     heater_cell_1 = openmc.Cell(region=heater_region_1)
     heater_cell_1.fill = heater_mat
 
     table_cell_1 = openmc.Cell(region=table_under_source_region_1)
     table_cell_1.fill = epoxy
 
-    sphere_cell_1 = openmc.Cell(region=sphere_region_1)
-    sphere_cell_1.fill = air
+    cuboid_cell_1 = openmc.Cell(region=cuboid_region_1)
+    cuboid_cell_1.fill = air
 
     he_cell_1 = openmc.Cell(region=he_region_1)
     he_cell_1.fill = he
@@ -563,7 +565,7 @@ def nursery_geometry(baby_positions, breeders):
         furnace_cell_1,
         heater_cell_1,
         he_cell_1,
-        sphere_cell_1,
+        cuboid_cell_1,
         table_cell_1,
         lead_block_1_cell_1,
         lead_block_2_cell_1,
@@ -573,11 +575,9 @@ def nursery_geometry(baby_positions, breeders):
 
     if source_position == 1:
         cells.append(source_wall_cell_1)
-        cells.append(source_region)     
+        cells.append(source_region)
 
     breeder_cells = [breeder_cell_1]
-
-
 
     ########## BABY 2 ##########
     x_c, y_c, z_c = baby_positions[1]
@@ -683,14 +683,14 @@ def nursery_geometry(baby_positions, breeders):
     z_cyl_6_2 = openmc.ZCylinder(x0=x_c, y0=y_c, r=ov_external_radius)
 
     heater_z = (
-    epoxy_thickness
-    + alumina_compressed_thickness
-    + ov_base_thickness
-    + alumina_thickness
-    + he_thickness
-    + iv_base_thickness
-    + heater_gap
-    + z_c
+        epoxy_thickness
+        + alumina_compressed_thickness
+        + ov_base_thickness
+        + alumina_thickness
+        + he_thickness
+        + iv_base_thickness
+        + heater_gap
+        + z_c
     )
 
     right_cyl_2 = openmc.model.RightCircularCylinder(
@@ -701,21 +701,32 @@ def nursery_geometry(baby_positions, breeders):
         # If BABY 2 is the one with the neutron source, add the source geometry
         source_x = x_c - 13.50
         source_y = y_c
-        source_z = z_c - source_z_offset 
+        source_z = z_c - source_z_offset
 
         ext_cyl_source = openmc.model.RightCircularCylinder(
-        (source_x, source_y, source_z), source_h, source_external_r, axis="x"
+            (source_x, source_y, source_z), source_h, source_external_r, axis="x"
         )
         source_region = openmc.model.RightCircularCylinder(
-        (source_x + 0.25, source_y, source_z), source_h - 0.50, source_internal_r, axis="x"
+            (source_x + 0.25, source_y, source_z),
+            source_h - 0.50,
+            source_internal_r,
+            axis="x",
         )
 
         source_wall_region = -ext_cyl_source & +source_region
         source_region = -source_region
 
+    ########## Cuboid for trimming geometry ##########
+    x_min = x_c - 40
+    x_max = x_c + 40
+    y_min = y_c - 40
+    y_max = y_c + 40
+    z_min = z_c - 40
+    z_max = z_c + 40
 
-    ########## Sphere for trimming geometry ##########
-    sphere_2 = openmc.Sphere(x0=x_c, y0=y_c, z0=z_c, r=50.00)  
+    cuboid_2 = openmc.model.RectangularParallelepiped(
+        x_min, x_max, y_min, y_max, z_min, z_max
+    )
 
     ########## Lead bricks positioned under the source ##########
     positions = [
@@ -738,29 +749,26 @@ def nursery_geometry(baby_positions, breeders):
         lead_blocks_2.append(lead_block_region_2)
 
     ########## Regions for BABY 2 ##########
-    epoxy_region_2 = +z_plane_1_2 & -z_plane_2_2 & -sphere_2
-    alumina_compressed_region_2 = +z_plane_2_2 & -z_plane_3_2 & -sphere_2
+    epoxy_region_2 = +z_plane_1_2 & -z_plane_2_2 & -cuboid_2
+    alumina_compressed_region_2 = +z_plane_2_2 & -z_plane_3_2 & -cuboid_2
     bottom_vessel_2 = +z_plane_3_2 & -z_plane_4_2 & -z_cyl_6_2
     top_vessel_2 = +z_plane_12_2 & -z_plane_13_2 & -z_cyl_6_2 & +right_cyl_2
     cylinder_vessel_2 = +z_plane_4_2 & -z_plane_12_2 & +z_cyl_5_2 & -z_cyl_6_2
     vessel_region_2 = bottom_vessel_2 | cylinder_vessel_2 | top_vessel_2
     alumina_region_2 = +z_plane_4_2 & -z_plane_5_2 & -z_cyl_5_2
     bottom_cap_2 = +z_plane_6_2 & -z_plane_7_2 & -z_cyl_2_2 & +right_cyl_2
-    cylinder_cap_2 = +z_plane_7_2 & -z_plane_9_2 & +z_cyl_1_2 & -z_cyl_2_2 & +right_cyl_2
+    cylinder_cap_2 = (
+        +z_plane_7_2 & -z_plane_9_2 & +z_cyl_1_2 & -z_cyl_2_2 & +right_cyl_2
+    )
     top_cap_2 = +z_plane_9_2 & -z_plane_10_2 & -z_cyl_2_2 & +right_cyl_2
     cap_region_2 = bottom_cap_2 | cylinder_cap_2 | top_cap_2
 
-    breeder_region_2 = (
-        +z_plane_7_2
-        & -z_plane_8_2
-        & -z_cyl_1_2
-        & +right_cyl_2
-    )
+    breeder_region_2 = +z_plane_7_2 & -z_plane_8_2 & -z_cyl_1_2 & +right_cyl_2
 
     gap_region_2 = +z_plane_8_2 & -z_plane_9_2 & -z_cyl_1_2 & +right_cyl_2
     furnace_region_2 = +z_plane_5_2 & -z_plane_11_2 & +z_cyl_3_2 & -z_cyl_4_2
     heater_region_2 = -right_cyl_2
-    table_under_source_region_2 = +z_plane_15_2 & -z_plane_14_2 & -sphere_2
+    table_under_source_region_2 = +z_plane_15_2 & -z_plane_14_2 & -cuboid_2
     lead_block_1_region_2 = -lead_blocks_2[0]
     lead_block_2_region_2 = -lead_blocks_2[1]
     lead_block_3_region_2 = -lead_blocks_2[2]
@@ -786,9 +794,9 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_2
             & ~lead_block_3_region_2
             & ~lead_block_4_region_2
-            )
-        sphere_region_2 = (
-            -sphere_2
+        )
+        cuboid_region_2 = (
+            -cuboid_2
             & ~source_wall_region
             & ~source_region
             & ~epoxy_region_2
@@ -806,7 +814,7 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_2
             & ~lead_block_3_region_2
             & ~lead_block_4_region_2
-            )
+        )
     else:
         he_region_2 = (
             +z_plane_5_2
@@ -826,9 +834,9 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_2
             & ~lead_block_3_region_2
             & ~lead_block_4_region_2
-            )
-        sphere_region_2 = (
-            -sphere_2
+        )
+        cuboid_region_2 = (
+            -cuboid_2
             & ~epoxy_region_2
             & ~alumina_compressed_region_2
             & ~alumina_region_2
@@ -844,7 +852,7 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_2
             & ~lead_block_3_region_2
             & ~lead_block_4_region_2
-            )
+        )
 
     ########## Cells for BABY 2 ##########
     if source_position == 2:
@@ -853,7 +861,7 @@ def nursery_geometry(baby_positions, breeders):
 
         source_region = openmc.Cell(region=source_region)
         source_region.fill = None
-    
+
     epoxy_cell_2 = openmc.Cell(region=epoxy_region_2)
     epoxy_cell_2.fill = epoxy
 
@@ -882,15 +890,15 @@ def nursery_geometry(baby_positions, breeders):
 
     furnace_cell_2 = openmc.Cell(region=furnace_region_2)
     furnace_cell_2.fill = furnace
-    
+
     heater_cell_2 = openmc.Cell(region=heater_region_2)
     heater_cell_2.fill = heater_mat
 
     table_cell_2 = openmc.Cell(region=table_under_source_region_2)
     table_cell_2.fill = epoxy
 
-    sphere_cell_2 = openmc.Cell(region=sphere_region_2)
-    sphere_cell_2.fill = air
+    cuboid_cell_2 = openmc.Cell(region=cuboid_region_2)
+    cuboid_cell_2.fill = air
 
     he_cell_2 = openmc.Cell(region=he_region_2)
     he_cell_2.fill = he
@@ -917,7 +925,7 @@ def nursery_geometry(baby_positions, breeders):
     cells.append(furnace_cell_2)
     cells.append(heater_cell_2)
     cells.append(he_cell_2)
-    cells.append(sphere_cell_2)
+    cells.append(cuboid_cell_2)
     cells.append(table_cell_2)
     cells.append(lead_block_1_cell_2)
     cells.append(lead_block_2_cell_2)
@@ -926,11 +934,9 @@ def nursery_geometry(baby_positions, breeders):
 
     if source_position == 2:
         cells.append(source_wall_cell_1)
-        cells.append(source_region)     
+        cells.append(source_region)
 
     breeder_cells.append(breeder_cell_2)
-
-
 
     ########## BABY 3 ##########
     x_c, y_c, z_c = baby_positions[2]
@@ -1036,14 +1042,14 @@ def nursery_geometry(baby_positions, breeders):
     z_cyl_6_3 = openmc.ZCylinder(x0=x_c, y0=y_c, r=ov_external_radius)
 
     heater_z = (
-    epoxy_thickness
-    + alumina_compressed_thickness
-    + ov_base_thickness
-    + alumina_thickness
-    + he_thickness
-    + iv_base_thickness
-    + heater_gap
-    + z_c
+        epoxy_thickness
+        + alumina_compressed_thickness
+        + ov_base_thickness
+        + alumina_thickness
+        + he_thickness
+        + iv_base_thickness
+        + heater_gap
+        + z_c
     )
 
     right_cyl_3 = openmc.model.RightCircularCylinder(
@@ -1054,21 +1060,32 @@ def nursery_geometry(baby_positions, breeders):
         # If BABY 3 is the one with the neutron source, add the source geometry
         source_x = x_c - 13.50
         source_y = y_c
-        source_z = z_c - source_z_offset 
+        source_z = z_c - source_z_offset
 
         ext_cyl_source = openmc.model.RightCircularCylinder(
-        (source_x, source_y, source_z), source_h, source_external_r, axis="x"
+            (source_x, source_y, source_z), source_h, source_external_r, axis="x"
         )
         source_region = openmc.model.RightCircularCylinder(
-        (source_x + 0.25, source_y, source_z), source_h - 0.50, source_internal_r, axis="x"
+            (source_x + 0.25, source_y, source_z),
+            source_h - 0.50,
+            source_internal_r,
+            axis="x",
         )
 
         source_wall_region = -ext_cyl_source & +source_region
         source_region = -source_region
 
+    ########## Cuboid for trimming geometry ##########
+    x_min = x_c - 40
+    x_max = x_c + 40
+    y_min = y_c - 40
+    y_max = y_c + 40
+    z_min = z_c - 40
+    z_max = z_c + 40
 
-    ########## Sphere for trimming geometry ##########
-    sphere_3 = openmc.Sphere(x0=x_c, y0=y_c, z0=z_c, r=50.00)  
+    cuboid_3 = openmc.model.RectangularParallelepiped(
+        x_min, x_max, y_min, y_max, z_min, z_max
+    )
 
     ########## Lead bricks positioned under the source ##########
     positions = [
@@ -1090,30 +1107,27 @@ def nursery_geometry(baby_positions, breeders):
         )
         lead_blocks_3.append(lead_block_region_3)
 
-    ########## Regions for BABY 2 ##########
-    epoxy_region_3 = +z_plane_1_3 & -z_plane_2_3 & -sphere_3
-    alumina_compressed_region_3 = +z_plane_2_3 & -z_plane_3_3 & -sphere_3
+    ########## Regions for BABY 3 ##########
+    epoxy_region_3 = +z_plane_1_3 & -z_plane_2_3 & -cuboid_3
+    alumina_compressed_region_3 = +z_plane_2_3 & -z_plane_3_3 & -cuboid_3
     bottom_vessel_3 = +z_plane_3_3 & -z_plane_4_3 & -z_cyl_6_3
     top_vessel_3 = +z_plane_12_3 & -z_plane_13_3 & -z_cyl_6_3 & +right_cyl_3
     cylinder_vessel_3 = +z_plane_4_3 & -z_plane_12_3 & +z_cyl_5_3 & -z_cyl_6_3
     vessel_region_3 = bottom_vessel_3 | cylinder_vessel_3 | top_vessel_3
     alumina_region_3 = +z_plane_4_3 & -z_plane_5_3 & -z_cyl_5_3
     bottom_cap_3 = +z_plane_6_3 & -z_plane_7_3 & -z_cyl_2_3 & +right_cyl_3
-    cylinder_cap_3 = +z_plane_7_3 & -z_plane_9_3 & +z_cyl_1_3 & -z_cyl_2_3 & +right_cyl_3
+    cylinder_cap_3 = (
+        +z_plane_7_3 & -z_plane_9_3 & +z_cyl_1_3 & -z_cyl_2_3 & +right_cyl_3
+    )
     top_cap_3 = +z_plane_9_3 & -z_plane_10_3 & -z_cyl_2_3 & +right_cyl_3
     cap_region_3 = bottom_cap_3 | cylinder_cap_3 | top_cap_3
 
-    breeder_region_3 = (
-        +z_plane_7_3
-        & -z_plane_8_3
-        & -z_cyl_1_3
-        & +right_cyl_3
-    )
+    breeder_region_3 = +z_plane_7_3 & -z_plane_8_3 & -z_cyl_1_3 & +right_cyl_3
 
     gap_region_3 = +z_plane_8_3 & -z_plane_9_3 & -z_cyl_1_3 & +right_cyl_3
     furnace_region_3 = +z_plane_5_3 & -z_plane_11_3 & +z_cyl_3_3 & -z_cyl_4_3
     heater_region_3 = -right_cyl_3
-    table_under_source_region_3 = +z_plane_15_3 & -z_plane_14_3 & -sphere_3
+    table_under_source_region_3 = +z_plane_15_3 & -z_plane_14_3 & -cuboid_3
     lead_block_1_region_3 = -lead_blocks_3[0]
     lead_block_2_region_3 = -lead_blocks_3[1]
     lead_block_3_region_3 = -lead_blocks_3[2]
@@ -1139,9 +1153,9 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_3
             & ~lead_block_3_region_3
             & ~lead_block_4_region_3
-            )
-        sphere_region_3 = (
-            -sphere_3
+        )
+        cuboid_region_3 = (
+            -cuboid_3
             & ~source_wall_region
             & ~source_region
             & ~epoxy_region_3
@@ -1159,7 +1173,7 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_3
             & ~lead_block_3_region_3
             & ~lead_block_4_region_3
-            )
+        )
     else:
         he_region_3 = (
             +z_plane_5_3
@@ -1179,9 +1193,9 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_3
             & ~lead_block_3_region_3
             & ~lead_block_4_region_3
-            )
-        sphere_region_3 = (
-            -sphere_3
+        )
+        cuboid_region_3 = (
+            -cuboid_3
             & ~epoxy_region_3
             & ~alumina_compressed_region_3
             & ~alumina_region_3
@@ -1197,7 +1211,7 @@ def nursery_geometry(baby_positions, breeders):
             & ~lead_block_2_region_3
             & ~lead_block_3_region_3
             & ~lead_block_4_region_3
-            )
+        )
 
     ########## Cells for BABY 3 ##########
     if source_position == 3:
@@ -1206,7 +1220,7 @@ def nursery_geometry(baby_positions, breeders):
 
         source_region = openmc.Cell(region=source_region)
         source_region.fill = None
-    
+
     epoxy_cell_3 = openmc.Cell(region=epoxy_region_3)
     epoxy_cell_3.fill = epoxy
 
@@ -1235,15 +1249,15 @@ def nursery_geometry(baby_positions, breeders):
 
     furnace_cell_3 = openmc.Cell(region=furnace_region_3)
     furnace_cell_3.fill = furnace
-    
+
     heater_cell_3 = openmc.Cell(region=heater_region_3)
     heater_cell_3.fill = heater_mat
 
     table_cell_3 = openmc.Cell(region=table_under_source_region_3)
     table_cell_3.fill = epoxy
 
-    sphere_cell_3 = openmc.Cell(region=sphere_region_3)
-    sphere_cell_3.fill = air
+    cuboid_cell_3 = openmc.Cell(region=cuboid_region_3)
+    cuboid_cell_3.fill = air
 
     he_cell_3 = openmc.Cell(region=he_region_3)
     he_cell_3.fill = he
@@ -1270,7 +1284,7 @@ def nursery_geometry(baby_positions, breeders):
     cells.append(furnace_cell_3)
     cells.append(heater_cell_3)
     cells.append(he_cell_3)
-    cells.append(sphere_cell_3)
+    cells.append(cuboid_cell_3)
     cells.append(table_cell_3)
     cells.append(lead_block_1_cell_3)
     cells.append(lead_block_2_cell_3)
@@ -1279,14 +1293,16 @@ def nursery_geometry(baby_positions, breeders):
 
     if source_position == 3:
         cells.append(source_wall_cell_1)
-        cells.append(source_region)     
+        cells.append(source_region)
 
     breeder_cells.append(breeder_cell_3)
 
     ########## Global sphere to enclose all BABY geometries ##########
-    global_sphere = sphere_geometry(baby_positions)
+    # global_sphere = sphere_geometry(baby_positions)
 
-    outer_region = -global_sphere & +sphere_1 & +sphere_2 & +sphere_3
+    global_cuboid = bounding_geometry(baby_positions, 50)
+
+    outer_region = -global_cuboid & +cuboid_1 & +cuboid_2 & +cuboid_3
     outer_cell = openmc.Cell(region=outer_region)
     outer_cell.fill = air
 
@@ -1308,19 +1324,15 @@ baby_positions = [
 
 # Breeder materials for each BABY experiment
 # The order of the breeders should match the order of the BABY positions
-breeders = [
-    "Li2O",
-    "Li2O",
-    "Li2O"
-]
+breeders = ["Li2O", "Li2O", "Li2O"]
 
 ## Source position
 source_position = 1  # Index of the BABY position where the source is located
 source_z_offset = 5.635  # Offset for the source Z position
 
-source_x = baby_positions[source_position-1][0] - 13.50
-source_y = baby_positions[source_position-1][1]
-source_z = baby_positions[source_position-1][2] - source_z_offset 
+source_x = baby_positions[source_position - 1][0] - 13.50
+source_y = baby_positions[source_position - 1][1]
+source_z = baby_positions[source_position - 1][2] - source_z_offset
 
 ## BABY vertical dimensions
 epoxy_thickness = 2.54  # 1 inch
@@ -1527,7 +1539,6 @@ if __name__ == "__main__":
     for i, (pos, breeder) in enumerate(zip(baby_positions, breeders), start=1):
         print(f"  BABY {i} at position {pos} cm with breeder material: {breeder}")
 
-
     ## get BABY 1 results
     tbr_tally_1 = sp.get_tally(name="TBR_1").get_pandas_dataframe()
 
@@ -1552,7 +1563,6 @@ if __name__ == "__main__":
 
     rel_stdev_3 = stdev_3 / mean_3
 
-
     ## print TBR results
     print(f"BABY 1 TBR: {mean_1:.6e}\n")
     print(f"BABY 2 TBR: {mean_2:.6e}\n")
@@ -1576,13 +1586,13 @@ if __name__ == "__main__":
             "std_dev": tbr_tally_1["std. dev."].iloc[0],
         },
         "modelled_TBR_2": {
-        "mean": tbr_tally_2["mean"].iloc[0],
-        "std_dev": tbr_tally_2["std. dev."].iloc[0],
+            "mean": tbr_tally_2["mean"].iloc[0],
+            "std_dev": tbr_tally_2["std. dev."].iloc[0],
         },
         "modelled_TBR_3": {
-        "mean": tbr_tally_3["mean"].iloc[0],
-        "std_dev": tbr_tally_3["std. dev."].iloc[0],
-        }
+            "mean": tbr_tally_3["mean"].iloc[0],
+            "std_dev": tbr_tally_3["std. dev."].iloc[0],
+        },
     }
 
     import json
@@ -1602,4 +1612,3 @@ if __name__ == "__main__":
         json.dump(existing_data, f, indent=4)
 
     print(f"Processed data stored in {processed_data_file}")
-
