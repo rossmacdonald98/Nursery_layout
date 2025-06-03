@@ -1,8 +1,27 @@
+##### Code Summary #####
+
+# This script defines an OpenMC model for a neutron source experiment in
+# a vault containing several BABY experiments with different breeder materials.
+# The position(s) and z-offset(s) of the neutron source can be specified by the user.
+# The script will run through all combinations of source location and save the results.
+
+# The code is strectured as follows:
+# 1. Import necessary libraries and modules.
+# 2. Define the vault layout, including BABY positions and breeder materials.
+# 3. Define functions to calculate breeder depth, Li2O bed properties, build the nursery model etc
+# 5. Define the dimensions of the BABY experiments.
+# 4. Define the materials for the BABY experiments.
+# 5. Run the model in a loop to cycle through all source locations and z-offsets, save results in json.
+
+
+import os
+import glob
 import openmc
 from libra_toolbox.neutronics.neutron_source import A325_generator_diamond
 from libra_toolbox.neutronics import vault
 import math
 import numpy as np
+import json
 
 # Vault layout
 ## List of BABY coordinates within vault
@@ -18,11 +37,29 @@ baby_positions = [
 breeders = ["ClLiF", "Li2O", "LiPb"]
 
 ## Source position
-source_position = 1  # Index of the BABY position where the source is located
-source_z_offset = 5.635  # Offset for the source Z position below table
+source_positions = [
+    1,
+]  # Indexes of the BABY position where the source is located, model runs for each position
+source_z_offsets = [
+    5.635,
+    10,
+]  # Offsets for the source Z position below table (negative)
 
 ############################################################################
 # Functions
+
+
+def deep_update(d, u):
+    """Recursively updates a dictionary with another dictionary.
+    Args:
+        d (dict): The dictionary to update.
+        u (dict): The dictionary with updates.
+    """
+    for k, v in u.items():
+        if isinstance(v, dict) and k in d:
+            deep_update(d[k], v)
+        else:
+            d[k] = v
 
 
 def calculate_breeder_depth(R, r, g, V):
@@ -108,7 +145,7 @@ def get_Li2O_bed_properties(pellet_porosity, packing_efficiency, he_density):
     return pellet_bed_density, Li_mass_frac_bed, O_mass_frac_bed, He_mass_frac_bed
 
 
-def nursery_model():
+def nursery_model(src_position, src_z_offset):
     """Returns an openmc model of the 'nursery' vault containing several BABY experiments and returns a TBR for each of them.
 
     Returns:
@@ -133,7 +170,15 @@ def nursery_model():
     ########## Build cells defining geometry of BABY experiment(s), source and exclusion sphere ##########
     # sphere = sphere_geometry(baby_positions)
 
-    cells, breeder_cells = nursery_geometry(baby_positions, breeders)
+    cells, breeder_cells = nursery_geometry(
+        baby_positions, breeders, src_position, src_z_offset
+    )
+
+    source_x = baby_positions[src_position - 1][0]  # Get the x position of the source
+    source_y = baby_positions[src_position - 1][1]  # Get the y position of the source
+    source_z = (
+        baby_positions[src_position - 1][2] - src_z_offset
+    )  # Get the z position of the source
 
     ############################################################################
     # Define Settings
@@ -145,7 +190,7 @@ def nursery_model():
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(1e4)
+    settings.particles = int(1e3)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
@@ -156,12 +201,6 @@ def nursery_model():
 
     ############################################################################
     # Specify Tallies
-
-    # Extract breeder cells for tallies
-    breeder_1 = breeder_cells[0]
-    breeder_2 = breeder_cells[1]
-    breeder_3 = breeder_cells[2]
-
     # Create a list of tallies
     tallies = openmc.Tallies()
 
@@ -207,7 +246,7 @@ def bounding_geometry(positions, margin):
     return bouding_cuboid
 
 
-def nursery_geometry(baby_positions, breeders):
+def nursery_geometry(baby_positions, breeders, src_position, src_z_offset):
     """Returns the geometry for the BABY experiments in the vault, with specified breeder materials and source location.
 
     Args:
@@ -348,11 +387,11 @@ def nursery_geometry(baby_positions, breeders):
             (x_c, y_c, heater_z), heater_length, heater_radius, axis="z"
         )
 
-        if source_position == i+1:
+        if src_position == i + 1:
             # If BABY i is the one with the neutron source, add the source geometry
             source_x = x_c - 13.50
             source_y = y_c
-            source_z = z_c - source_z_offset
+            source_z = z_c - src_z_offset
 
             ext_cyl_source = openmc.model.RightCircularCylinder(
                 (source_x, source_y, source_z), source_h, source_external_r, axis="x"
@@ -410,9 +449,7 @@ def nursery_geometry(baby_positions, breeders):
         vessel_region = bottom_vessel | cylinder_vessel | top_vessel
         alumina_region = +z_plane_4 & -z_plane_5 & -z_cyl_5
         bottom_cap = +z_plane_6 & -z_plane_7 & -z_cyl_2 & +right_cyl
-        cylinder_cap = (
-            +z_plane_7 & -z_plane_9 & +z_cyl_1 & -z_cyl_2 & +right_cyl
-        )
+        cylinder_cap = +z_plane_7 & -z_plane_9 & +z_cyl_1 & -z_cyl_2 & +right_cyl
         top_cap = +z_plane_9 & -z_plane_10 & -z_cyl_2 & +right_cyl
         cap_region = bottom_cap | cylinder_cap | top_cap
 
@@ -427,7 +464,7 @@ def nursery_geometry(baby_positions, breeders):
         lead_block_3_region = -lead_blocks[2]
         lead_block_4_region = -lead_blocks[3]
 
-        if source_position == i+1:
+        if src_position == i + 1:
             he_region = (
                 +z_plane_5
                 & -z_plane_12
@@ -508,7 +545,7 @@ def nursery_geometry(baby_positions, breeders):
             )
 
         ########## Cells for BABY i ##########
-        if source_position == i+1:
+        if src_position == i + 1:
             source_wall_cell = openmc.Cell(region=source_wall_region)
             source_wall_cell.fill = SS304
             cells_dict[f"source_wall_cell_{i+1}"] = source_wall_cell
@@ -599,7 +636,7 @@ def nursery_geometry(baby_positions, breeders):
 
     global_cuboid = bounding_geometry(baby_positions, 50)
 
-    outer_region = -global_cuboid 
+    outer_region = -global_cuboid
     for i in range(no_BABYs):
         cuboid_i = trim_regions[i]
         outer_region = outer_region & +cuboid_i
@@ -615,10 +652,6 @@ def nursery_geometry(baby_positions, breeders):
 ############################################################################
 # Dimensions
 # All dimensions in cm
-
-source_x = baby_positions[source_position - 1][0] - 13.50
-source_y = baby_positions[source_position - 1][1]
-source_z = baby_positions[source_position - 1][2] - source_z_offset
 
 ## BABY vertical dimensions
 epoxy_thickness = 2.54  # 1 inch
@@ -701,12 +734,6 @@ packing_efficiency = 0.7  # Random packing efficiency for cylindrical pellets wi
 pellet_bed_density, Li_mass_frac_bed, O_mass_frac_bed, He_mass_frac_bed = (
     get_Li2O_bed_properties(pellet_porosity, packing_efficiency, he_density)
 )
-
-print("**Li2O packed bed properties**")
-print("Oxygen mass fraction:", O_mass_frac_bed, "% mass")
-print("Lithium mass fraction:", Li_mass_frac_bed, "% mass")
-print("Helium mass fraction:", He_mass_frac_bed, "% mass")
-print("Pellet bed density:", pellet_bed_density, "g/cm3")
 
 Li2O_bed.add_element("O", O_mass_frac_bed, "wo")
 Li2O_bed.add_element("Li", Li_mass_frac_bed, "wo")
@@ -814,62 +841,116 @@ lead.add_nuclide("Pb208", 0.524, "ao")
 ############################################################################
 # Main
 
+# Create results directory.
+processed_data = {}
+
 if __name__ == "__main__":
 
-    model = nursery_model()
-    model.run()
-    sp = openmc.StatePoint(f"statepoint.{model.settings.batches}.h5")
+    # Determine number of openmc runs based on source positions and z-offsets
+    no_runs = len(source_positions) * len(source_z_offsets)
 
-    print("Nursery model simulation completed successfully.")
-    print("BABY locations and breeder materials:")
-    for i, (pos, breeder) in enumerate(zip(baby_positions, breeders), start=1):
-        print(f"  BABY {i} at position {pos} cm with breeder material: {breeder}")
+    # Initialize run counter
+    run = 1
 
-    results = []
+    # Delete any existing statepoint and summary files
+    for file in glob.glob("*.h5"):
+        os.remove(file)
 
-    for i in range(len(baby_positions)):
-        tally_name = f"TBR_{i+1}"
-        tbr_tally = sp.get_tally(name=tally_name).get_pandas_dataframe()
-        mean = tbr_tally["mean"].iloc[0]
-        stdev = tbr_tally["std. dev."].iloc[0]
-        rel_stdev = stdev / mean
-
-        results.append({
-            "mean": mean,
-            "stdev": stdev,
-            "rel_stdev": rel_stdev,
-        })
-
-        print(f"BABY {i+1} TBR: {mean:.6e}\n")
-        print(f"BABY {i+1} TBR std. dev: {stdev:.6e}\n")
-        print(f"BABY {i+1} Relative standard deviation: {rel_stdev:.6e}\n")
-
-    print("Relative standard deviation below 1e-02 (1%) indicates good convergence.")
-
-    processed_data = {}
-
-    for i in range(len(baby_positions)):
-        tally_name = f"TBR_{i+1}"
-        tbr_tally = sp.get_tally(name=tally_name).get_pandas_dataframe()
-        processed_data[f"modelled_TBR_{i+1}"] = {
-            "mean": tbr_tally["mean"].iloc[0],
-            "std_dev": tbr_tally["std. dev."].iloc[0],
-        }
-
-    import json
-
+    # Delete any existing processed_data.json file
     processed_data_file = "../../data/processed_data.json"
+    if os.path.exists(processed_data_file):
+        os.remove(processed_data_file)
 
-    try:
-        with open(processed_data_file, "r") as f:
-            existing_data = json.load(f)
-    except FileNotFoundError:
-        print(f"Processed data file not found, creating it in {processed_data_file}")
-        existing_data = {}
+    # For each source position...
+    for src_position in source_positions:
+        src_position_key = f"source position {src_position}"
+        processed_data[src_position_key] = {}
 
-    existing_data.update(processed_data)
+        # For each z_offset, run the nursery model and save results into processed_data
+        for src_z_offset in source_z_offsets:
+            src_z_offset_key = f"z_offset {src_z_offset:+.3f}"
+            processed_data[src_position_key][src_z_offset_key] = {}
 
-    with open(processed_data_file, "w") as f:
-        json.dump(existing_data, f, indent=4)
+            print(
+                "Running nursery model for source position "
+                f"{src_position} and z-offset {src_z_offset:.3f} cm..."
+            )
 
-    print(f"Processed data stored in {processed_data_file}")
+            model = nursery_model(src_position, src_z_offset)
+            model.run()
+
+            # Load the statepoint file to extract results
+            sp = openmc.StatePoint(f"statepoint.{model.settings.batches}.h5")
+
+            # Print run results summary
+
+            print(
+                f" Nursery model simulation {run} of {no_runs} completed successfully."
+            )
+            print("BABY locations and breeder materials:")
+
+            for i, (pos, breeder) in enumerate(zip(baby_positions, breeders), start=1):
+                print(
+                    f"  BABY {i} at position {pos} cm with breeder material: {breeder}"
+                )
+
+            print(f"Source position: {src_position}, Source z-offset: {src_z_offset}")
+
+            # Extract and print TBR results for each BABY experiment for this source position and z-offset
+            for i in range(len(baby_positions)):
+                tally_name = f"TBR_{i+1}"
+                tbr_tally = sp.get_tally(name=tally_name).get_pandas_dataframe()
+
+                mean = tbr_tally["mean"].iloc[0]
+                stdev = tbr_tally["std. dev."].iloc[0]
+                rel_stdev = stdev / mean
+
+                print(f"BABY {i+1} TBR: {mean:.6e}\n")
+                print(f"BABY {i+1} TBR std. dev: {stdev:.6e}\n")
+                print(f"BABY {i+1} Relative standard deviation: {rel_stdev:.6e}\n")
+                print(
+                    "Relative standard deviation below 1e-02 (1%) indicates good convergence."
+                )
+
+                # Store run results in processed_data
+                processed_data[src_position_key][src_z_offset_key][
+                    f"modelled_TBR_{i+1}"
+                ] = {
+                    "mean": mean,
+                    "std_dev": stdev,
+                    "relative_std_dev": rel_stdev,
+                }
+
+            # rename summary.h5 and statepoint files to enable next run
+            # Rename summary.h5
+            if os.path.exists("summary.h5"):
+                os.rename("summary.h5", f"summary.{src_position}.{src_z_offset}.h5")
+
+            # Rename statepoint file
+            statepoint_file = f"statepoint.{model.settings.batches}.h5"
+            new_statepoint_file = (
+                f"statepoint.{src_position}.{src_z_offset}.{model.settings.batches}.h5"
+            )
+            if os.path.exists(statepoint_file):
+                os.rename(statepoint_file, new_statepoint_file)
+
+            processed_data_file = "../../data/processed_data.json"
+
+            try:
+                with open(processed_data_file, "r") as f:
+                    existing_data = json.load(f)
+            except FileNotFoundError:
+                print(
+                    f"Processed data file not found, creating it in {processed_data_file}"
+                )
+                existing_data = {}
+
+            deep_update(existing_data, processed_data)
+
+            with open(processed_data_file, "w") as f:
+                json.dump(existing_data, f, indent=4)
+
+            print(f"Processed data stored in {processed_data_file}")
+
+            run = run + 1
+print("All runs completed successfully.")
