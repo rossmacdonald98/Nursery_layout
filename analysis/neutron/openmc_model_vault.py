@@ -1,7 +1,8 @@
 ##### Code Summary #####
 
-# This script defines an OpenMC model for a neutron source experiment in
-# a vault containing several BABY experiments with different breeder materials.
+# This script defines an OpenMC model for the LIBRA BABY 1L experiment in the vaul, containing
+# several BABY experiments with different breeder materials running in parallel. This model is to
+# understand the amount of cross-irradiation that occurs with the neutron source in different positions.
 # The position(s) and z-offset(s) of the neutron source can be specified by the user.
 # The script will run through all combinations of source location and save the results.
 
@@ -11,8 +12,7 @@
 # 3. Define functions to calculate breeder depth, Li2O bed properties, build the nursery model etc
 # 5. Define the dimensions of the BABY experiments.
 # 4. Define the materials for the BABY experiments.
-# 5. Run the model in a loop to cycle through all source locations and z-offsets, save results in json.
-
+# 5. Run the model in a loop to cycle through all source locations and z-offsets, save results in processed_data.json.
 
 import os
 import glob
