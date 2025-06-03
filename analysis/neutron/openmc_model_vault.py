@@ -29,7 +29,7 @@ baby_positions = [
     (590, 70, 100),
     (885, 78, 100),
     (897, 299, 100),
-    # (700, 200, 100), # Uncomment if you want to add a fourth BABY
+    # (700, 200, 100), # Uncomment to add a fourth BABY
 ]
 
 # Breeder materials for each BABY experiment
@@ -44,7 +44,6 @@ source_positions = [
 ]  # Indexes of the BABY position where the source is located, model runs for each position
 source_z_offsets = [
     -5.635,
-    -10,
 ]  # Offsets for the source Z position below table (negative)
 
 ############################################################################
@@ -179,7 +178,7 @@ def nursery_model(src_position, src_z_offset):
     source_x = baby_positions[src_position - 1][0]  # Get the x position of the source
     source_y = baby_positions[src_position - 1][1]  # Get the y position of the source
     source_z = (
-        baby_positions[src_position - 1][2] - src_z_offset
+        baby_positions[src_position - 1][2] + src_z_offset
     )  # Get the z position of the source
 
     ############################################################################
@@ -192,7 +191,7 @@ def nursery_model(src_position, src_z_offset):
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(1e3)
+    settings.particles = int(5e3)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
