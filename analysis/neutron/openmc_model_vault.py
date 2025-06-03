@@ -39,10 +39,12 @@ breeders = ["ClLiF", "Li2O", "LiPb"]
 ## Source position
 source_positions = [
     1,
+    2,
+    3,
 ]  # Indexes of the BABY position where the source is located, model runs for each position
 source_z_offsets = [
-    5.635,
-    10,
+    -5.635,
+    -10,
 ]  # Offsets for the source Z position below table (negative)
 
 ############################################################################
@@ -391,7 +393,7 @@ def nursery_geometry(baby_positions, breeders, src_position, src_z_offset):
             # If BABY i is the one with the neutron source, add the source geometry
             source_x = x_c - 13.50
             source_y = y_c
-            source_z = z_c - src_z_offset
+            source_z = z_c + src_z_offset
 
             ext_cyl_source = openmc.model.RightCircularCylinder(
                 (source_x, source_y, source_z), source_h, source_external_r, axis="x"
