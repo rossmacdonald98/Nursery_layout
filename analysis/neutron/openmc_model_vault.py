@@ -9,7 +9,8 @@
 # The code is strectured as follows:
 # 1. Import necessary libraries and modules.
 # 2. Define the vault layout, including BABY positions and breeder materials.
-# 3. Define functions to calculate breeder depth, Li2O bed properties, build the nursery model etc
+# 3. Define functions to calculate breeder depth,
+#    Li2O bed properties, build the nursery model etc. Includes tally definitions in nursery_model().
 # 5. Define the dimensions of the BABY experiments.
 # 4. Define the materials for the BABY experiments.
 # 5. Run the model in a loop to cycle through all source locations and z-offsets, save results in processed_data.json.
@@ -18,7 +19,7 @@ import os
 import glob
 import openmc
 from libra_toolbox.neutronics.neutron_source import A325_generator_diamond
-from libra_toolbox.neutronics import vault
+import vault_modified
 import math
 import numpy as np
 import json
@@ -39,7 +40,6 @@ breeders = ["ClLiF", "Li2O", "LiPb"]
 ## Source position
 source_positions = [
     1,
-    2,
     3,
 ]  # Indexes of the BABY position where the source is located, model runs for each position
 source_z_offsets = [
@@ -202,7 +202,7 @@ def nursery_model(src_position, src_z_offset):
 
     ############################################################################
     # Specify Tallies
-    # Create a list of tallies
+    # Create a list of tallies with initial TBR tallies for each breeder cell
     tallies = openmc.Tallies()
 
     for i, breeder_cell in enumerate(breeder_cells, start=1):
@@ -214,13 +214,56 @@ def nursery_model(src_position, src_z_offset):
     ############################################################################
     # Model
 
-    model = vault.build_vault_model(
+    model = vault_modified.build_vault_model(
         settings=settings,
         tallies=tallies,
         added_cells=cells,
         added_materials=materials,
         overall_exclusion_region=overall_exclusion_region,
     )
+
+    # Get all cells from the model geometry including the vault geometry
+    model_cells = model.geometry.get_all_cells()
+
+    # Get wall cells from model geometry by filtering for concrete fill
+    wall_cells = [cell for cell in model_cells.values() if getattr(cell.fill, "name", None) == "Concrete"]
+
+    print(f"Found {len(wall_cells)} wall cells in the model.")
+
+    # Get LiPb breeder cells from model geometry by filtering for lithium_lead fill
+    LiPb_cell = [
+        cell for cell in model_cells.values() if getattr(cell.fill, "name", None) == "Lithium Lead"
+        ]
+
+    # Create list for new tallies to add to model
+    more_tallies = openmc.Tallies()
+
+    # Create a tally for breeder TBR from neutrons from vault wall cells
+    for i, breeder_cell in enumerate(breeder_cells, start=1):
+        tally = openmc.Tally(name=f"TBR_from_wall_{i}")
+        from_wall_cell_filter = openmc.CellFromFilter(wall_cells)
+        tally.scores = ["(n,Xt)"]
+        tally.filters = [openmc.CellFilter(breeder_cell),from_wall_cell_filter]
+        more_tallies.append(tally)
+
+        # Create a tally for breeder TBR from neutrons from vault wall cells
+    for i, breeder_cell in enumerate(breeder_cells, start=1):
+        tally = openmc.Tally(name=f"TBR_from_LiPb_{i}")
+        LiPb_born_filter = openmc.CellBornFilter(LiPb_cell)
+        tally.scores = ["(n,Xt)"]
+        tally.filters = [openmc.CellFilter(breeder_cell),LiPb_born_filter]
+        more_tallies.append(tally)
+
+    # Get the energy spectrum of neutrons responsible for breeding tritium in the breeder cells
+    for i, breeder_cell in enumerate(breeder_cells, start=1):
+        energies = openmc.mgxs.GROUP_STRUCTURES["CCFE-709"]
+        energy_filter = openmc.EnergyFilter(energies)
+        tally = openmc.Tally(name=f"TBR_spectrum_{i}")
+        tally.filters = [openmc.CellFilter(breeder_cell), energy_filter]
+        tally.scores = ["(n,Xt)"]
+        more_tallies.append(tally)
+
+    model.tallies.extend(more_tallies)
 
     return model
 
@@ -899,6 +942,7 @@ if __name__ == "__main__":
 
             # Extract and print TBR results for each BABY experiment for this source position and z-offset
             for i in range(len(baby_positions)):
+                # Standard TBR tally
                 tally_name = f"TBR_{i+1}"
                 tbr_tally = sp.get_tally(name=tally_name).get_pandas_dataframe()
 
@@ -909,18 +953,73 @@ if __name__ == "__main__":
                 print(f"BABY {i+1} TBR: {mean:.6e}\n")
                 print(f"BABY {i+1} TBR std. dev: {stdev:.6e}\n")
                 print(f"BABY {i+1} Relative standard deviation: {rel_stdev:.6e}\n")
-                print(
-                    "Relative standard deviation below 1e-02 (1%) indicates good convergence."
-                )
+                print("Relative standard deviation below 1e-02 (1%) indicates good convergence.")
 
-                # Store run results in processed_data
-                processed_data[src_position_key][src_z_offset_key][
-                    f"modelled_TBR_{i+1}"
-                ] = {
+                # Store standard TBR results
+                processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_{i+1}"] = {
                     "mean": mean,
                     "std_dev": stdev,
                     "relative_std_dev": rel_stdev,
                 }
+
+                # TBR from wall tally
+                wall_tally_name = f"TBR_from_wall_{i+1}"
+                tbr_wall_tally = sp.get_tally(name=wall_tally_name).get_pandas_dataframe()
+
+                wall_mean = tbr_wall_tally["mean"].iloc[0]
+                wall_stdev = tbr_wall_tally["std. dev."].iloc[0]
+                wall_rel_stdev = wall_stdev / wall_mean
+
+                print(f"BABY {i+1} TBR from wall: {wall_mean:.6e}\n")
+                print(f"BABY {i+1} TBR from wall std. dev: {wall_stdev:.6e}\n")
+                print(f"BABY {i+1} TBR from wall Relative std. dev: {wall_rel_stdev:.6e}\n")
+
+                # Store wall TBR results
+                processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_from_wall_{i+1}"] = {
+                    "mean": wall_mean,
+                    "std_dev": wall_stdev,
+                    "relative_std_dev": wall_rel_stdev,
+                }
+
+                # TBR from LiPb tally
+                LiPb_tally_name = f"TBR_from_LiPb_{i+1}"
+                tbr_LiPb_tally = sp.get_tally(name=LiPb_tally_name).get_pandas_dataframe()
+
+                LiPb_mean = tbr_LiPb_tally["mean"].iloc[0]
+                LiPb_stdev = tbr_LiPb_tally["std. dev."].iloc[0]
+                LiPb_rel_stdev = LiPb_stdev / LiPb_mean
+
+                print(f"BABY {i+1} TBR from LiPb: {LiPb_mean:.6e}\n")
+                print(f"BABY {i+1} TBR from LiPb std. dev: {LiPb_stdev:.6e}\n")
+                print(f"BABY {i+1} TBR from LiPb Relative std. dev: {LiPb_rel_stdev:.6e}\n")
+
+                # Store LiPb TBR results
+                processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_from_LiPb_{i+1}"] = {
+                    "mean": LiPb_mean,
+                    "std_dev": LiPb_stdev,
+                    "relative_std_dev": LiPb_rel_stdev,
+                }
+
+                # # Energy spectrum tally
+                # spectrum_tally_name = f"TBR_spectrum_{i+1}"
+                # spectrum_tally = sp.get_tally(name=spectrum_tally_name).get_pandas_dataframe()
+
+                # print(spectrum_tally)
+
+                # spectrum_mean = spectrum_tally["mean"].iloc[0]
+                # spectrum_stdev = spectrum_tally["std. dev."].iloc[0]
+                # spectrum_rel_stdev = spectrum_stdev / spectrum_mean
+
+                # print(f"BABY {i+1} TBR energy spectrum: {spectrum_mean:.6e}\n")
+                # print(f"BABY {i+1} TBR energy spectrum std. dev: {spectrum_stdev:.6e}\n")
+                # print(f"BABY {i+1} TBR energy spectrum Relative std. dev: {spectrum_rel_stdev:.6e}\n")
+
+                # # Store energy spectrum TBR results
+                # processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_spectrum_{i+1}"] = {
+                #     "mean": spectrum_mean,
+                #     "std_dev": spectrum_stdev,
+                #     "relative_std_dev": spectrum_rel_stdev,
+                # }
 
             # rename summary.h5 and statepoint files to enable next run
             # Rename summary.h5
