@@ -9,11 +9,11 @@
 # The code is strectured as follows:
 # 1. Import necessary libraries and modules.
 # 2. Define the vault layout, including BABY positions and breeder materials.
-# 3. Define functions to calculate breeder depth,
-#    Li2O bed properties, build the nursery model etc. Includes tally definitions in nursery_model().
-# 5. Define the dimensions of the BABY experiments.
-# 4. Define the materials for the BABY experiments.
-# 5. Run the model in a loop to cycle through all source locations and z-offsets, save results in processed_data.json.
+# 3. Define functions to calculate breeder depth, Li2O bed properties, 
+#    build the nursery model etc. Includes tally definitions in nursery_model().
+# 4. Define the dimensions of the BABY experiments.
+# 5. Define the materials for the BABY experiments.
+# 6. Run the model in a loop to cycle through all source locations and z-offsets, save results in processed_data.json.
 
 import os
 import glob
@@ -27,9 +27,9 @@ import json
 # Vault layout
 ## List of BABY coordinates within vault
 baby_positions = [
-    (590, 70, 100),
-    (885, 78, 100),
-    (897, 299, 100),
+    (590, 70),
+    (885, 78),
+    (897, 299),
     # (700, 200, 100), # Uncomment to add a fourth BABY
 ]
 
@@ -41,9 +41,12 @@ breeders = ["ClLiF", "Li2O", "LiPb"]
 source_positions = [
     1,
     3,
+
 ]  # Indexes of the BABY position where the source is located, model runs for each position
-source_z_offsets = [
-    -5.635,
+baby_heights = [
+    100,
+    60,
+
 ]  # Offsets for the source Z position below table (negative)
 
 ############################################################################
@@ -146,7 +149,7 @@ def get_Li2O_bed_properties(pellet_porosity, packing_efficiency, he_density):
     return pellet_bed_density, Li_mass_frac_bed, O_mass_frac_bed, He_mass_frac_bed
 
 
-def nursery_model(src_position, src_z_offset):
+def nursery_model(src_position, height):
     """Returns an openmc model of the 'nursery' vault containing several BABY experiments and returns a TBR for each of them.
 
     Returns:
@@ -172,14 +175,12 @@ def nursery_model(src_position, src_z_offset):
     # sphere = sphere_geometry(baby_positions)
 
     cells, breeder_cells = nursery_geometry(
-        baby_positions, breeders, src_position, src_z_offset
+        baby_positions, breeders, src_position, height
     )
 
     source_x = baby_positions[src_position - 1][0]  # Get the x position of the source
     source_y = baby_positions[src_position - 1][1]  # Get the y position of the source
-    source_z = (
-        baby_positions[src_position - 1][2] + src_z_offset
-    )  # Get the z position of the source
+    source_z = height - 5.635 # Place the source 5.635 cm below the BABY origin height
 
     ############################################################################
     # Define Settings
@@ -191,14 +192,14 @@ def nursery_model(src_position, src_z_offset):
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(5e3)
+    settings.particles = int(1e3)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
     ############################################################################
     # overall_exclusion_region = -sphere
 
-    overall_exclusion_region = -bounding_geometry(baby_positions, 50)
+    overall_exclusion_region = -bounding_geometry(baby_positions, height, 50)
 
     ############################################################################
     # Specify Tallies
@@ -268,7 +269,7 @@ def nursery_model(src_position, src_z_offset):
     return model
 
 
-def bounding_geometry(positions, margin):
+def bounding_geometry(positions, height, margin):
     """
     Returns a cuboid region that bounds all positions, with optional margin.
 
@@ -280,8 +281,11 @@ def bounding_geometry(positions, margin):
         cuboid surface bounding all supplied positions with margin.
     """
     positions = np.array(positions)
-    x_min, y_min, z_min = np.min(positions, axis=0) - margin
-    x_max, y_max, z_max = np.max(positions, axis=0) + margin
+    x_min, y_min, = np.min(positions, axis=0) - margin
+    x_max, y_max, = np.max(positions, axis=0) + margin
+
+    z_min = height - margin
+    z_max = height + margin
 
     bouding_cuboid = openmc.model.RectangularParallelepiped(
         x_min, x_max, y_min, y_max, z_min, z_max
@@ -290,7 +294,7 @@ def bounding_geometry(positions, margin):
     return bouding_cuboid
 
 
-def nursery_geometry(baby_positions, breeders, src_position, src_z_offset):
+def nursery_geometry(baby_positions, breeders, src_position, height):
     """Returns the geometry for the BABY experiments in the vault, with specified breeder materials and source location.
 
     Args:
@@ -314,7 +318,8 @@ def nursery_geometry(baby_positions, breeders, src_position, src_z_offset):
 
         print(f"Building BABY {i+1} geometry...")
 
-        x_c, y_c, z_c = baby_positions[i]
+        x_c, y_c = baby_positions[i]
+        z_c = height 
 
         breeder = breeders[i]
 
@@ -435,7 +440,7 @@ def nursery_geometry(baby_positions, breeders, src_position, src_z_offset):
             # If BABY i is the one with the neutron source, add the source geometry
             source_x = x_c - 13.50
             source_y = y_c
-            source_z = z_c + src_z_offset
+            source_z = z_c - 5.635  # Place the source 5.635 cm below the BABY origin
 
             ext_cyl_source = openmc.model.RightCircularCylinder(
                 (source_x, source_y, source_z), source_h, source_external_r, axis="x"
@@ -678,7 +683,7 @@ def nursery_geometry(baby_positions, breeders, src_position, src_z_offset):
     ########## Global sphere to enclose all BABY geometries ##########
     # global_sphere = sphere_geometry(baby_positions)
 
-    global_cuboid = bounding_geometry(baby_positions, 50)
+    global_cuboid = bounding_geometry(baby_positions, height, 50)
 
     outer_region = -global_cuboid
     for i in range(no_BABYs):
@@ -891,7 +896,7 @@ processed_data = {}
 if __name__ == "__main__":
 
     # Determine number of openmc runs based on source positions and z-offsets
-    no_runs = len(source_positions) * len(source_z_offsets)
+    no_runs = len(source_positions) * len(baby_heights)
 
     # Initialize run counter
     run = 1
@@ -911,16 +916,16 @@ if __name__ == "__main__":
         processed_data[src_position_key] = {}
 
         # For each z_offset, run the nursery model and save results into processed_data
-        for src_z_offset in source_z_offsets:
-            src_z_offset_key = f"z_offset {src_z_offset:+.3f}"
-            processed_data[src_position_key][src_z_offset_key] = {}
+        for height in baby_heights:
+            height_key = f"BABY height: {height:+.3f}"
+            processed_data[src_position_key][height_key] = {}
 
             print(
                 "Running nursery model for source position "
-                f"{src_position} and z-offset {src_z_offset:.3f} cm..."
+                f"{src_position} and BABY height {height:.3f} cm..."
             )
 
-            model = nursery_model(src_position, src_z_offset)
+            model = nursery_model(src_position, height)
             model.run()
 
             # Load the statepoint file to extract results
@@ -938,7 +943,7 @@ if __name__ == "__main__":
                     f"  BABY {i} at position {pos} cm with breeder material: {breeder}"
                 )
 
-            print(f"Source position: {src_position}, Source z-offset: {src_z_offset}")
+            print(f"Source position: {src_position}, BABY height: {height}")
 
             # Extract and print TBR results for each BABY experiment for this source position and z-offset
             for i in range(len(baby_positions)):
@@ -956,7 +961,7 @@ if __name__ == "__main__":
                 print("Relative standard deviation below 1e-02 (1%) indicates good convergence.")
 
                 # Store standard TBR results
-                processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_{i+1}"] = {
+                processed_data[src_position_key][height_key][f"modelled_TBR_{i+1}"] = {
                     "mean": mean,
                     "std_dev": stdev,
                     "relative_std_dev": rel_stdev,
@@ -975,7 +980,7 @@ if __name__ == "__main__":
                 print(f"BABY {i+1} TBR from wall Relative std. dev: {wall_rel_stdev:.6e}\n")
 
                 # Store wall TBR results
-                processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_from_wall_{i+1}"] = {
+                processed_data[src_position_key][height_key][f"modelled_TBR_from_wall_{i+1}"] = {
                     "mean": wall_mean,
                     "std_dev": wall_stdev,
                     "relative_std_dev": wall_rel_stdev,
@@ -994,7 +999,7 @@ if __name__ == "__main__":
                 print(f"BABY {i+1} TBR from LiPb Relative std. dev: {LiPb_rel_stdev:.6e}\n")
 
                 # Store LiPb TBR results
-                processed_data[src_position_key][src_z_offset_key][f"modelled_TBR_from_LiPb_{i+1}"] = {
+                processed_data[src_position_key][height_key][f"modelled_TBR_from_LiPb_{i+1}"] = {
                     "mean": LiPb_mean,
                     "std_dev": LiPb_stdev,
                     "relative_std_dev": LiPb_rel_stdev,
@@ -1024,12 +1029,12 @@ if __name__ == "__main__":
             # rename summary.h5 and statepoint files to enable next run
             # Rename summary.h5
             if os.path.exists("summary.h5"):
-                os.rename("summary.h5", f"summary.{src_position}.{src_z_offset}.h5")
+                os.rename("summary.h5", f"summary.{src_position}.{height}.h5")
 
             # Rename statepoint file
             statepoint_file = f"statepoint.{model.settings.batches}.h5"
             new_statepoint_file = (
-                f"statepoint.{src_position}.{src_z_offset}.{model.settings.batches}.h5"
+                f"statepoint.{src_position}.{height}.{model.settings.batches}.h5"
             )
             if os.path.exists(statepoint_file):
                 os.rename(statepoint_file, new_statepoint_file)
