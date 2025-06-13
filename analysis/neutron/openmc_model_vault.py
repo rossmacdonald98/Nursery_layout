@@ -40,14 +40,16 @@ breeders = ["ClLiF", "Li2O", "LiPb"]
 ## Source position
 source_positions = [
     1,
+    2,
     3,
 
 ]  # Indexes of the BABY position where the source is located, model runs for each position
 baby_heights = [
     100,
-    60,
+    75,
+    50,
 
-]  # Offsets for the source Z position below table (negative)
+]  # Heights of the BABY experiments, defined by position of table lower surface
 
 ############################################################################
 # Functions
@@ -192,7 +194,7 @@ def nursery_model(src_position, height):
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(1e3)
+    settings.particles = int(1e4)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
