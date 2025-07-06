@@ -29,13 +29,14 @@ import json
 baby_positions = [
     (590, 70),
     (885, 78),
-    (897, 299),
+    (897, 350),
     # (700, 200, 100), # Uncomment to add a fourth BABY
 ]
 
 # Breeder materials for each BABY experiment
 # The order of the breeders should match the order of the BABY positions
-breeders = ["ClLiF", "Li2O", "LiPb"]
+# Available breder materials are: "ClLiF", "LiPb", "Li2O"
+breeders = ["ClLiF", "LiPb", "Li2O"]
 
 ## Source position
 source_positions = [
@@ -47,8 +48,7 @@ source_positions = [
 baby_heights = [
     100,
     75,
-    50,
-
+    50
 ]  # Heights of the BABY experiments, defined by position of table lower surface
 
 ############################################################################
@@ -194,7 +194,7 @@ def nursery_model(src_position, height):
     settings.batches = 100
     settings.inactive = 0
     settings.run_mode = "fixed source"
-    settings.particles = int(1e4)
+    settings.particles = int(5e4)
     settings.output = {"tallies": True}
     settings.photon_transport = False
 
@@ -475,7 +475,7 @@ def nursery_geometry(baby_positions, breeders, src_position, height):
         positions = [
             (x_c - 13.50, y_c, z_c - table_height),
             (x_c - 4.50, y_c, z_c - table_height),
-            (x_c + 36.50, y_c, z_c - table_height),
+            (x_c + 36.0, y_c, z_c - table_height),
             (x_c + 27.50, y_c, z_c - table_height),
         ]
 
@@ -928,7 +928,7 @@ if __name__ == "__main__":
             )
 
             model = nursery_model(src_position, height)
-            model.run()
+            model.run(threads = 4)
 
             # Load the statepoint file to extract results
             sp = openmc.StatePoint(f"statepoint.{model.settings.batches}.h5")
